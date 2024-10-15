@@ -10,14 +10,16 @@
 /*                                                                            */
 /* ************************************************************************** */
 
-#include <iostream>
+#include "Server.hpp"
 
-int main(int ac, char**av)
+int main(int ac, char** av)
 {
+	(void)av;
 	if (ac != 3)
 	{
 		std::cout<<"\033[31mERROR: wrong arguments"<<std::endl;
 		std::cout<<"Usage : ./ircserv <port> <password>"<<std::endl;
 		return 1;
 	}
+	return 0;
 }
