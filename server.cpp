@@ -9,7 +9,7 @@ Server::Server(int port) : port(port) {
 	server_fd = socket(AF_INET, SOCK_STREAM, 0);
 	if (server_fd == 0) {
 		std::cerr << "Erreur: Création du socket échouée" << std::endl;
-		exit(EXIT_FAILURE);
+		_exit(1);
 	}
 
 	// Configuration de l'adresse du serveur
@@ -21,14 +21,14 @@ Server::Server(int port) : port(port) {
 	if (bind(server_fd, (struct sockaddr*)&address, sizeof(address)) < 0) {
 		std::cerr << "Erreur: Bind échoué" << std::endl;
 		close(server_fd);
-		exit(EXIT_FAILURE);
+		_exit(1);
 	}
 
 	// Le serveur écoute les connexions entrantes
 	if (listen(server_fd, 5) < 0) {
 		std::cerr << "Erreur: Listen échoué" << std::endl;
 		close(server_fd);
-		exit(EXIT_FAILURE);
+		_exit(1);
 	}
 }
 
