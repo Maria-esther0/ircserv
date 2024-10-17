@@ -6,9 +6,7 @@ int main(int ac, char **av)
     {
         std::cerr<<RED<< "ERROR !"<<std::endl<<WHITE<<"Usage: " << av[0] << " <port> <password>\n";
         _exit(1);
-    }
-    // else if (ac == 3)
-    //     std::cout<<GREEN<<"Welcome to IRC Server"<<WHITE<<std::endl;
+    }    
     
     if (Server::get_port(av[1]) == -1)
     {
@@ -16,8 +14,8 @@ int main(int ac, char **av)
         _exit(1);
     }
     
-    // int port = 6667; // Port standard pour IRC
-    // Server ircServer(port);
-    // ircServer.start();
+    int port = 6667; // Port standard pour IRC
+    Server ircServer(port);
+    ircServer.start();
     return 0;
 }

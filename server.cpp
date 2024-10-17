@@ -40,6 +40,7 @@ Server::~Server() {
 }
 
 void Server::start() {
+	std::cout<<GREEN<<"Welcome to IRC Server"<<WHITE<<std::endl;
 	std::cout << "Le serveur est en écoute sur le port " << port << std::endl;
 	acceptClients();
 }
