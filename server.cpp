@@ -69,6 +69,27 @@ void Server::handleClient(int client_fd) {
 	if (valread > 0) {
 		std::cout << "Message reçu: " << buffer << std::endl;
 		send(client_fd, "Bienvenue sur le serveur IRC!\n", strlen("Bienvenue sur le serveur IRC!\n"), 0);
+		
+		if (message.substr(0, 5) == "/KICK") {}
+		else if (message.substr(0, 7) == "/INVITE"){}
+		else if (message.substr(0, 6) == "/TOPIC"){}
+		else if (message.substr(0, 5) == "/MODE"){}
 	}
 	close(client_fd);
 }
+
+// void Server::kick(int client_fd, const std::string& command){
+//     std::cout << "Kicking user " << user << " from channel " << channel << std::endl;
+// }
+
+// void Server::invite(int client_fd, const std::string& command) {
+//     std::cout << "Inviting user " << user << " to channel " << channel << std::endl;
+// }
+
+// void Server::topic(int client_fd, const std::string& command) {
+//     std::cout << "Setting topic of channel " << channel << " to " << topic << std::endl;
+// }
+
+// void Server::mode(int client_fd, const std::string& command) {
+//     std::cout << "Setting mode of channel " << channel << " to " << mode << std::endl;
+// }
