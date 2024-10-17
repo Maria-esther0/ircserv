@@ -70,12 +70,27 @@ void Server::handleClient(int client_fd) {
 		std::cout << "Message reçu: " << buffer << std::endl;
 		send(client_fd, "Bienvenue sur le serveur IRC!\n", strlen("Bienvenue sur le serveur IRC!\n"), 0);
 		
-		if (message.substr(0, 5) == "/KICK") {}
-		else if (message.substr(0, 7) == "/INVITE"){}
-		else if (message.substr(0, 6) == "/TOPIC"){}
-		else if (message.substr(0, 5) == "/MODE"){}
+		// if (message.substr(0, 5) == "/KICK") {}
+		// else if (message.substr(0, 7) == "/INVITE"){}
+		// else if (message.substr(0, 6) == "/TOPIC"){}
+		// else if (message.substr(0, 5) == "/MODE"){}
 	}
 	close(client_fd);
+}
+
+int Server::get_port(char *ag)
+{
+	char *c = ag;
+	while (*ag)
+	{
+		if (!std::isdigit(*ag))
+		{
+			return (-1);
+		}
+		ag++;
+	}
+	// printf("Port: %d\n", std::atoi(c));
+	return std::atoi(c);
 }
 
 // void Server::kick(int client_fd, const std::string& command){

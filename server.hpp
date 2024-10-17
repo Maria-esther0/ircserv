@@ -7,6 +7,15 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <iostream>
+#include <stdlib.h>
+#include <stdio.h>
+
+//colors
+#define RED "\033[0;31m"
+#define WHITE "\033[0;37m"
+#define GREEN "\033[0;32m"
+#define YELLOW "\033[0;33m"
 
 class Server {
 private:
@@ -21,6 +30,8 @@ public:
 	void start(); // Méthode pour démarrer le serveur
 	void acceptClients(); // Accepter les connexions clients
 	void handleClient(int client_fd); // Gérer la communication avec un client
+
+	static int get_port(char *ag); // Récupérer le port à partir des arguments
 
 	// commandes specifiques aux operateurs de canaux
 // 	void kick(int client_fd, const std::string& command); // expulser un utilisateur d'un canal
