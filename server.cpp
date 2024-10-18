@@ -4,6 +4,8 @@
 #include <arpa/inet.h>
 #include <poll.h>
 
+bool Server::_signal = false;
+
 Server::Server(int port) : port(port) {
 	// Crée le socket du serveur
 	server_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -39,8 +41,11 @@ Server::~Server() {
 	}
 }
 
-void Server::start() {
+void Server::start(char *port, char *mdp) 
+{
+	(void)mdp;
 	std::cout<<GREEN<<"Welcome to IRC Server"<<WHITE<<std::endl;
+	catch_signal();
 	std::cout << "Le serveur est en écoute sur le port " << port << std::endl;
 	acceptClients();
 }
@@ -92,6 +97,29 @@ int Server::get_port(char *ag)
 	}
 	// printf("Port: %d\n", std::atoi(c));
 	return std::atoi(c);
+}
+
+/*
+ * Gestion des signaux pour crt+c et crt+\
+*/
+void Server::catch_signal()
+{
+	if (signal(SIGINT, Server::check_signal) == SIG_ERR) // crt+c
+	{
+		std::cerr << "Failed to bind signal SIGINT" << std::endl;
+		_exit(1);
+	}
+	if (signal(SIGQUIT, Server::check_signal) == SIG_ERR) /* crtl+\ */ 
+	{
+		std::cerr << "Failed to bind signal SIGQUIT" << std::endl;
+		_exit(1);
+	}
+}
+void Server::check_signal(int signal)
+{
+	std::cout << "Signal reçu: " << signal << std::endl;
+	Server::_signal = true;
+
 }
 
 // void Server::kick(int client_fd, const std::string& command){

@@ -16,6 +16,14 @@ int main(int ac, char **av)
     
     int port = 6667; // Port standard pour IRC
     Server ircServer(port);
-    ircServer.start();
+    try
+    {    ircServer.start(av[1], av[2]);}
+    catch(const std::exception& e)
+    {
+        ircServer.~Server();
+        std::cerr << e.what() << std::endl;
+        return 1;
+    }
+    
     return 0;
 }

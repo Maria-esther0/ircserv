@@ -10,6 +10,7 @@
 #include <iostream>
 #include <stdlib.h>
 #include <stdio.h>
+#include <signal.h>
 
 //colors
 #define RED "\033[0;31m"
@@ -23,15 +24,19 @@ private:
 	int port; // Port sur lequel le serveur écoute
 	struct sockaddr_in address; // Adresse du serveur
 	std::vector<int> clients; // Liste des descripteurs de fichiers clients
+	void catch_signal();
+	static bool _signal;
 
 public:
 	Server(int port);
 	~Server();
-	void start(); // Méthode pour démarrer le serveur
+	void start(char *port, char *mdp); // Méthode pour démarrer le serveur
 	void acceptClients(); // Accepter les connexions clients
 	void handleClient(int client_fd); // Gérer la communication avec un client
 
+	static void check_signal(int signal);
 	static int get_port(char *ag); // Récupérer le port à partir des arguments
+
 
 	// commandes specifiques aux operateurs de canaux
 // 	void kick(int client_fd, const std::string& command); // expulser un utilisateur d'un canal
