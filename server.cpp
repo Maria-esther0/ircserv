@@ -119,6 +119,7 @@ void Server::check_signal(int signal)
 {
 	std::cout << "Signal reçu: " << signal << std::endl;
 	Server::_signal = true;
+	_exit(0);
 
 }
 
