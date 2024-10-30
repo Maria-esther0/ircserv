@@ -130,17 +130,39 @@ void Server::processCommand(int client_fd, const std::string &message) {
 	std::string command;
 	iss >> command;
 
+	if (command == "CAP") {
+		std::string subCommand;
+		iss >> subCommand;
+		if (subCommand == "LS") {
+			std::string response = ":server CAP * LS :\r\n";
+			send(client_fd, response.c_str(), response.size(), 0);
+		}
+		return;
+	}
+
+	// Initialisation de l'état de connexion pour chaque client
+	Client& client = clientMap[client_fd];
+
 	if (command == "PASS") {
 		std::string password;
 		iss >> password;
 		if (!checkPassword(client_fd, password)) {
-			return; // Fermer la connexion si le mot de passe est incorrect
+			return;
 		}
+		client.passReceived = true;
 	} else if (command == "NICK") {
+		if (!client.passReceived) {
+			std::cerr << "Erreur : Le mot de passe doit être envoyé avant NICK.\n";
+			return;
+		}
 		std::string nickname;
 		iss >> nickname;
 		setNickname(client_fd, nickname);
 	} else if (command == "USER") {
+		if (!client.passReceived) {
+			std::cerr << "Erreur : Le mot de passe doit être envoyé avant USER.\n";
+			return;
+		}
 		std::string username, realname;
 		iss >> username;
 		std::getline(iss, realname);
@@ -156,7 +178,19 @@ void Server::processCommand(int client_fd, const std::string &message) {
 	} else if (command == "KICK") {
 		std::string channel, user;
 		iss >> channel >> user;
-		kickUser(client_fd, channel, user); // Appel de la fonction kickUser
+		kickUser(client_fd, channel, user);
+	} else if (command == "INVITE") {
+		std::string channel, user;
+		iss >> channel >> user;
+		inviteUser(client_fd, channel, user);
+	} else if (command == "MODE") {
+		std::string channel, mode, parameter;
+		iss >> channel >> mode;
+		if (iss >> parameter) {
+			setChannelMode(client_fd, channel, mode, parameter);
+		} else {
+			setChannelMode(client_fd, channel, mode);
+		}
 	} else if (command == "PRIVMSG") {
 		std::string recipient, messageBody;
 		iss >> recipient;
@@ -215,6 +249,7 @@ void Server::joinChannel(int client_fd, const std::string& channelName) {
 	// Si le canal n'existe pas, le créer
 	if (channelMap.find(channelName) == channelMap.end()) {
 		channelMap[channelName] = Channel(channelName);
+		channelMap[channelName].operators.insert(client_fd); // Le créateur est opérateur
 	}
 
 	// Ajouter le client au canal
@@ -249,33 +284,80 @@ void Server::sendMessage(int client_fd, const std::string& recipient, const std:
 }
 
 void Server::kickUser(int client_fd, const std::string& channelName, const std::string& user) {
+	// Vérifier que le canal existe
 	if (channelMap.find(channelName) == channelMap.end()) {
 		std::cerr << "Erreur: Le canal " << channelName << " n'existe pas." << std::endl;
 		return;
 	}
-	
-	// Remplacer "auto" par le type explicite
-	Channel &channel = channelMap[channelName];
-	int user_fd = -1;
 
-	// Remplacer la boucle basée sur les plages par une boucle classique
-	std::map<int, Client>::iterator it;
-	for (it = clientMap.begin(); it != clientMap.end(); ++it) {
+	// Récupérer le canal
+	Channel &channel = channelMap[channelName];
+
+	// Vérifier si le client est un opérateur de ce canal
+	if (channel.operators.find(client_fd) == channel.operators.end()) {
+		std::cerr << "Erreur: Le client " << client_fd << " n'est pas opérateur du canal " << channelName << "." << std::endl;
+		return;
+	}
+
+	// Trouver le FD de l'utilisateur à expulser
+	int user_fd = -1;
+	for (std::map<int, Client>::iterator it = clientMap.begin(); it != clientMap.end(); ++it) {
 		if (it->second.nickname == user) {
 			user_fd = it->first;
 			break;
 		}
 	}
 
+	// Vérifier si l'utilisateur à expulser est dans le canal
 	if (user_fd == -1 || channel.clients.find(user_fd) == channel.clients.end()) {
-		std::cerr << "Erreur: L'utilisateur " << user << " n'est pas dans le canal." << std::endl;
+		std::cerr << "Erreur: L'utilisateur " << user << " n'est pas dans le canal " << channelName << std::endl;
 		return;
 	}
 
+	// Retirer l'utilisateur du canal
 	channel.clients.erase(user_fd);
 	std::string kickMessage = "Vous avez été expulsé du canal " + channelName + ".\n";
 	send(user_fd, kickMessage.c_str(), kickMessage.size(), 0);
+
 	std::cout << "Utilisateur " << user << " expulsé du canal " << channelName << " par " << client_fd << std::endl;
+}
+
+void Server::inviteUser(int client_fd, const std::string& channelName, const std::string& user) {
+	// Vérifier que le canal existe
+	if (channelMap.find(channelName) == channelMap.end()) {
+		std::cerr << "Erreur : Le canal " << channelName << " n'existe pas." << std::endl;
+		return;
+	}
+
+	// Récupérer le canal
+	Channel &channel = channelMap[channelName];
+
+	// Vérifier si le client est un opérateur de ce canal
+	if (channel.operators.find(client_fd) == channel.operators.end()) {
+		std::cerr << "Erreur : Le client " << client_fd << " n'est pas opérateur du canal " << channelName << "." << std::endl;
+		return;
+	}
+
+	// Trouver le FD de l'utilisateur à inviter
+	int user_fd = -1;
+	for (std::map<int, Client>::iterator it = clientMap.begin(); it != clientMap.end(); ++it) {
+		if (it->second.nickname == user) {
+			user_fd = it->first;
+			break;
+		}
+	}
+
+	if (user_fd == -1) {
+		std::cerr << "Erreur : L'utilisateur " << user << " n'est pas connecté." << std::endl;
+		return;
+	}
+
+	// Envoyer une invitation à l'utilisateur
+	std::string inviteMessage = "Vous avez été invité à rejoindre le canal " + channelName + ".\n";
+	send(user_fd, inviteMessage.c_str(), inviteMessage.size(), 0);
+	std::cout << "Utilisateur " << user << " invité à rejoindre le canal " << channelName << " par " << client_fd << std::endl;
+
+	// Optionnel : Ajouter l'utilisateur à une liste d'accès pour le mode `i`
 }
 
 void Server::partChannel(int client_fd, const std::string& channelName) {
@@ -296,5 +378,77 @@ void Server::partChannel(int client_fd, const std::string& channelName) {
 		}
 	} else {
 		std::cerr << "Erreur: Le client " << client_fd << " n'est pas dans le canal " << channelName << std::endl;
+	}
+}
+
+void Server::setChannelMode(int client_fd, const std::string& channelName, const std::string& mode, const std::string& parameter) {
+	// Vérifier que le canal existe
+	if (channelMap.find(channelName) == channelMap.end()) {
+		std::cerr << "Erreur : Le canal " << channelName << " n'existe pas." << std::endl;
+		return;
+	}
+
+	Channel &channel = channelMap[channelName];
+
+	// Vérifier si le client est un opérateur de ce canal
+	if (channel.operators.find(client_fd) == channel.operators.end()) {
+		std::cerr << "Erreur : Le client " << client_fd << " n'est pas opérateur du canal " << channelName << "." << std::endl;
+		return;
+	}
+
+	// Appliquer le mode
+	if (mode == "+i") {
+		channel.inviteOnly = true;
+		std::cout << "Le mode +i (invitation seulement) est activé pour le canal " << channelName << std::endl;
+	} else if (mode == "-i") {
+		channel.inviteOnly = false;
+		std::cout << "Le mode -i (invitation seulement) est désactivé pour le canal " << channelName << std::endl;
+	} else if (mode == "+t") {
+		channel.topicRestricted = true;
+		std::cout << "Le mode +t (sujet restreint) est activé pour le canal " << channelName << std::endl;
+	} else if (mode == "-t") {
+		channel.topicRestricted = false;
+		std::cout << "Le mode -t (sujet restreint) est désactivé pour le canal " << channelName << std::endl;
+	} else if (mode == "+k" && !parameter.empty()) {
+		channel.password = parameter;
+		std::cout << "Le mot de passe pour le canal " << channelName << " est défini." << std::endl;
+	} else if (mode == "-k") {
+		channel.password.clear();
+		std::cout << "Le mot de passe pour le canal " << channelName << " est supprimé." << std::endl;
+	} else if (mode == "+l" && !parameter.empty()) {
+		channel.userLimit = std::stoi(parameter);
+		std::cout << "Limite d'utilisateurs pour le canal " << channelName << " est définie à " << channel.userLimit << std::endl;
+	} else if (mode == "-l") {
+		channel.userLimit = -1;
+		std::cout << "Limite d'utilisateurs pour le canal " << channelName << " est supprimée." << std::endl;
+	} else if (mode == "+o" && !parameter.empty()) {
+		// Trouver le FD de l'utilisateur cible pour lui donner les droits d'opérateur
+		int target_fd = -1;
+		for (std::map<int, Client>::iterator it = clientMap.begin(); it != clientMap.end(); ++it) {
+			if (it->second.nickname == parameter) {
+				target_fd = it->first;
+				break;
+			}
+		}
+
+		if (target_fd != -1) {
+			channel.operators.insert(target_fd);
+			std::cout << "Utilisateur " << parameter << " est maintenant opérateur du canal " << channelName << std::endl;
+		}
+	} else if (mode == "-o" && !parameter.empty()) {
+		int target_fd = -1;
+		for (std::map<int, Client>::iterator it = clientMap.begin(); it != clientMap.end(); ++it) {
+			if (it->second.nickname == parameter) {
+				target_fd = it->first;
+				break;
+			}
+		}
+
+		if (target_fd != -1) {
+			channel.operators.erase(target_fd);
+			std::cout << "Utilisateur " << parameter << " n'est plus opérateur du canal " << channelName << std::endl;
+		}
+	} else {
+		std::cerr << "Mode inconnu ou paramètre manquant pour le mode " << mode << std::endl;
 	}
 }

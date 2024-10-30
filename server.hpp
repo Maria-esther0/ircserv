@@ -16,18 +16,27 @@ struct Client {
 	std::string username;
 	std::string realname;
 	bool registered;
+	bool passReceived; // Pour vérifier si le mot de passe a été reçu
 
-	Client() : fd(-1), registered(false) {} // Constructeur par défaut
-	Client(int fd) : fd(fd), registered(false) {}
+	Client() : fd(-1), registered(false), passReceived(false) {} // Initialisation par défaut
+	Client(int fd) : fd(fd), registered(false), passReceived(false) {}
 };
 
 struct Channel {
 	std::string name;
 	std::set<int> clients;
+	std::set<int> operators;
+	
+	bool inviteOnly;         // Mode `i` : invitation seulement
+	bool topicRestricted;    // Mode `t` : sujet restreint aux opérateurs
+	std::string password;    // Mode `k` : mot de passe du canal
+	int userLimit;           // Mode `l` : limite d’utilisateurs
 
-	Channel() {} // Constructeur par défaut
-	Channel(const std::string& name) : name(name) {}
+	Channel() : inviteOnly(false), topicRestricted(false), userLimit(-1) {}
+	Channel(const std::string& name) : name(name), inviteOnly(false), topicRestricted(false), userLimit(-1) {}
 };
+
+
 
 class Server {
 private:
@@ -52,6 +61,8 @@ private:
 	void partChannel(int client_fd, const std::string& channelName);
 	void sendMessage(int client_fd, const std::string& recipient, const std::string& message);
 	void kickUser(int client_fd, const std::string& channelName, const std::string& user);
+	void inviteUser(int client_fd, const std::string& channelName, const std::string& user);
+	void setChannelMode(int client_fd, const std::string& channelName, const std::string& mode, const std::string& parameter = "");
 
 public:
 	Server(int port, const std::string &password);
