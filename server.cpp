@@ -6,7 +6,8 @@
 
 bool Server::_signal = false;
 
-Server::Server(int port) : port(port) {
+Server::Server(int port) : port(port)
+{
 	// Crée le socket du serveur
 	server_fd = socket(AF_INET, SOCK_STREAM, 0);
 	if (server_fd == 0) {
@@ -41,7 +42,7 @@ Server::~Server() {
 	}
 }
 
-void Server::start(char *port, char *mdp) 
+void Server::start(char *port, char *mdp)
 {
 	(void)mdp;
 	std::cout<<GREEN<<"Welcome to IRC Server"<<WHITE<<std::endl;
@@ -75,7 +76,7 @@ void Server::handleClient(int client_fd) {
 	if (valread > 0) {
 		std::cout << "Message reçu: " << buffer << std::endl;
 		send(client_fd, "Bienvenue sur le serveur IRC!\n", strlen("Bienvenue sur le serveur IRC!\n"), 0);
-		
+
 		// if (message.substr(0, 5) == "/KICK") {}
 		// else if (message.substr(0, 7) == "/INVITE"){}
 		// else if (message.substr(0, 6) == "/TOPIC"){}
@@ -109,7 +110,7 @@ void Server::catch_signal()
 		std::cerr << "Failed to bind signal SIGINT" << std::endl;
 		_exit(1);
 	}
-	if (signal(SIGQUIT, Server::check_signal) == SIG_ERR) /* crtl+\ */ 
+	if (signal(SIGQUIT, Server::check_signal) == SIG_ERR) /* crtl+\ */
 	{
 		std::cerr << "Failed to bind signal SIGQUIT" << std::endl;
 		_exit(1);
