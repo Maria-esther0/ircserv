@@ -63,20 +63,19 @@ void Server::start() {
 }
 
 void Server::acceptClients() {
-	struct pollfd fds[100]; // Peut gérer jusqu'à 100 clients simultanés pour cet exemple
+	struct pollfd fds[100];
 	int client_count = 0;
 
-	fds[0].fd = server_fd; // Le serveur lui-même (pour accepter de nouvelles connexions)
-	fds[0].events = POLLIN; // Attendre les événements d'entrée
+	fds[0].fd = server_fd;
+	fds[0].events = POLLIN;
 
 	while (true) {
-		int poll_count = poll(fds, client_count + 1, -1); // Attendre des événements
+		int poll_count = poll(fds, client_count + 1, -1);
 		if (poll_count < 0) {
 			std::cerr << "Erreur: poll() échoué - " << strerror(errno) << std::endl;
 			continue;
 		}
 
-		// Vérifier si un nouveau client se connecte
 		if (fds[0].revents & POLLIN) {
 			struct sockaddr_in client_address;
 			socklen_t client_len = sizeof(client_address);
@@ -86,27 +85,29 @@ void Server::acceptClients() {
 				continue;
 			}
 
-			// Configurer le socket client en mode non-bloquant
 			setNonBlocking(new_client);
+			
+			// Activer SO_KEEPALIVE pour maintenir la connexion active
+			int optval = 1;
+			setsockopt(new_client, SOL_SOCKET, SO_KEEPALIVE, &optval, sizeof(optval));
 
 			std::cout << "Nouveau client connecté!" << std::endl;
 			client_count++;
-			fds[client_count].fd = new_client; // Ajouter le nouveau client au tableau de poll
-			fds[client_count].events = POLLIN; // Attendre les messages de ce client
+			fds[client_count].fd = new_client;
+			fds[client_count].events = POLLIN;
 		}
 
-		// Gérer les messages des clients existants
+		// Gestion des autres événements pour les clients connectés
 		for (int i = 1; i <= client_count; i++) {
 			if (fds[i].revents & POLLIN) {
 				handleClient(fds[i].fd);
 
-				// Supprimer les clients déconnectés
 				if (fds[i].fd == -1) {
 					for (int j = i; j < client_count; ++j) {
 						fds[j] = fds[j + 1];
 					}
 					--client_count;
-					--i; // Ajuster l'index
+					--i;
 				}
 			}
 		}
@@ -130,6 +131,12 @@ void Server::processCommand(int client_fd, const std::string &message) {
 	std::string command;
 	iss >> command;
 
+	// Trouver le client correspondant au client_fd
+	Client& client = clientMap[client_fd];
+
+	// Log de debug pour chaque commande reçue
+	std::cerr << "Commande reçue : " << command << " de client_fd : " << client_fd << std::endl;
+
 	if (command == "CAP") {
 		std::string subCommand;
 		iss >> subCommand;
@@ -140,16 +147,13 @@ void Server::processCommand(int client_fd, const std::string &message) {
 		return;
 	}
 
-	// Initialisation de l'état de connexion pour chaque client
-	Client& client = clientMap[client_fd];
-
 	if (command == "PASS") {
 		std::string password;
 		iss >> password;
 		if (!checkPassword(client_fd, password)) {
-			return;
+			return; // Fermer la connexion si le mot de passe est incorrect
 		}
-		client.passReceived = true;
+		client.passReceived = true; // Indiquer que le mot de passe a été reçu
 	} else if (command == "NICK") {
 		if (!client.passReceived) {
 			std::cerr << "Erreur : Le mot de passe doit être envoyé avant NICK.\n";
@@ -167,6 +171,17 @@ void Server::processCommand(int client_fd, const std::string &message) {
 		iss >> username;
 		std::getline(iss, realname);
 		setUser(client_fd, username, realname);
+
+		// Envoyer une séquence complète de messages de bienvenue après l'enregistrement de l'utilisateur
+		std::string welcomeMsg1 = ":server 001 " + client.nickname + " :Bienvenue sur le serveur IRC\r\n";
+		std::string welcomeMsg2 = ":server 002 " + client.nickname + " :Votre host est server, version 1.0\r\n";
+		std::string welcomeMsg3 = ":server 003 " + client.nickname + " :This server was created today\r\n";
+		std::string welcomeMsg4 = ":server 004 " + client.nickname + " server 1.0 iowghraAsORTVSxNCWqBzvd\r\n";
+		
+		send(client_fd, welcomeMsg1.c_str(), welcomeMsg1.size(), 0);
+		send(client_fd, welcomeMsg2.c_str(), welcomeMsg2.size(), 0);
+		send(client_fd, welcomeMsg3.c_str(), welcomeMsg3.size(), 0);
+		send(client_fd, welcomeMsg4.c_str(), welcomeMsg4.size(), 0);
 	} else if (command == "JOIN") {
 		std::string channel;
 		iss >> channel;
@@ -191,6 +206,12 @@ void Server::processCommand(int client_fd, const std::string &message) {
 		} else {
 			setChannelMode(client_fd, channel, mode);
 		}
+	} else if (command == "TOPIC") {
+		std::string channel, topic;
+		iss >> channel;
+		std::getline(iss, topic);
+		topic = topic.empty() ? "" : topic.substr(1); // Supprime l'espace initial de `getline`
+		topicChannel(client_fd, channel, topic);
 	} else if (command == "PRIVMSG") {
 		std::string recipient, messageBody;
 		iss >> recipient;
@@ -205,20 +226,27 @@ void Server::processCommand(int client_fd, const std::string &message) {
 }
 
 void Server::handleClient(int client_fd) {
-	char buffer[1024] = {0};
-	int valread = read(client_fd, buffer, 1024);
-	
-	if (valread > 0) {
-		std::string message(buffer);
-		processCommand(client_fd, message);
-	} else if (valread == 0) {
-		// Déconnexion propre
-		std::cout << "Client déconnecté proprement !" << std::endl;
+	char buffer[1024];
+	int bytesRead = recv(client_fd, buffer, sizeof(buffer), 0);
+	if (bytesRead < 0) {
+		if (errno == EWOULDBLOCK || errno == EAGAIN) {
+			return; // Pas de données à lire pour le moment
+		} else {
+			std::cerr << "Erreur de lecture de client " << client_fd << ": " << strerror(errno) << std::endl;
+			close(client_fd);
+			removeClient(client_fd);
+			return;
+		}
+	} else if (bytesRead == 0) {
+		std::cout << "Le client " << client_fd << " s'est déconnecté." << std::endl;
 		close(client_fd);
 		removeClient(client_fd);
-	} else {
-		std::cerr << "Erreur: lecture échouée pour le client " << client_fd << " - " << strerror(errno) << std::endl;
+		return;
 	}
+
+	// Traiter les données reçues
+	std::string message(buffer, bytesRead);
+	processCommand(client_fd, message);
 }
 
 void Server::setNickname(int client_fd, const std::string& nickname) {
@@ -284,22 +312,18 @@ void Server::sendMessage(int client_fd, const std::string& recipient, const std:
 }
 
 void Server::kickUser(int client_fd, const std::string& channelName, const std::string& user) {
-	// Vérifier que le canal existe
 	if (channelMap.find(channelName) == channelMap.end()) {
 		std::cerr << "Erreur: Le canal " << channelName << " n'existe pas." << std::endl;
 		return;
 	}
 
-	// Récupérer le canal
 	Channel &channel = channelMap[channelName];
 
-	// Vérifier si le client est un opérateur de ce canal
 	if (channel.operators.find(client_fd) == channel.operators.end()) {
 		std::cerr << "Erreur: Le client " << client_fd << " n'est pas opérateur du canal " << channelName << "." << std::endl;
 		return;
 	}
 
-	// Trouver le FD de l'utilisateur à expulser
 	int user_fd = -1;
 	for (std::map<int, Client>::iterator it = clientMap.begin(); it != clientMap.end(); ++it) {
 		if (it->second.nickname == user) {
@@ -308,37 +332,37 @@ void Server::kickUser(int client_fd, const std::string& channelName, const std::
 		}
 	}
 
-	// Vérifier si l'utilisateur à expulser est dans le canal
 	if (user_fd == -1 || channel.clients.find(user_fd) == channel.clients.end()) {
 		std::cerr << "Erreur: L'utilisateur " << user << " n'est pas dans le canal " << channelName << std::endl;
 		return;
 	}
 
-	// Retirer l'utilisateur du canal
+	std::string notifyMsg = ":" + clientMap[client_fd].nickname + " KICK " + channelName + " " + user + " :Expulsé par l'opérateur\r\n";
+	for (std::set<int>::iterator it = channel.clients.begin(); it != channel.clients.end(); ++it) {
+		int member_fd = *it;
+		send(member_fd, notifyMsg.c_str(), notifyMsg.size(), 0);
+	}
+
 	channel.clients.erase(user_fd);
-	std::string kickMessage = "Vous avez été expulsé du canal " + channelName + ".\n";
+	std::string kickMessage = "Vous avez été expulsé du canal " + channelName + ".\r\n";
 	send(user_fd, kickMessage.c_str(), kickMessage.size(), 0);
 
 	std::cout << "Utilisateur " << user << " expulsé du canal " << channelName << " par " << client_fd << std::endl;
 }
 
 void Server::inviteUser(int client_fd, const std::string& channelName, const std::string& user) {
-	// Vérifier que le canal existe
 	if (channelMap.find(channelName) == channelMap.end()) {
 		std::cerr << "Erreur : Le canal " << channelName << " n'existe pas." << std::endl;
 		return;
 	}
 
-	// Récupérer le canal
 	Channel &channel = channelMap[channelName];
 
-	// Vérifier si le client est un opérateur de ce canal
 	if (channel.operators.find(client_fd) == channel.operators.end()) {
 		std::cerr << "Erreur : Le client " << client_fd << " n'est pas opérateur du canal " << channelName << "." << std::endl;
 		return;
 	}
 
-	// Trouver le FD de l'utilisateur à inviter
 	int user_fd = -1;
 	for (std::map<int, Client>::iterator it = clientMap.begin(); it != clientMap.end(); ++it) {
 		if (it->second.nickname == user) {
@@ -352,12 +376,13 @@ void Server::inviteUser(int client_fd, const std::string& channelName, const std
 		return;
 	}
 
-	// Envoyer une invitation à l'utilisateur
-	std::string inviteMessage = "Vous avez été invité à rejoindre le canal " + channelName + ".\n";
+	std::string inviteMessage = "Vous avez été invité à rejoindre le canal " + channelName + ".\r\n";
 	send(user_fd, inviteMessage.c_str(), inviteMessage.size(), 0);
-	std::cout << "Utilisateur " << user << " invité à rejoindre le canal " << channelName << " par " << client_fd << std::endl;
+	
+	std::string confirmMsg = ":server 341 " + clientMap[client_fd].nickname + " " + user + " " + channelName + " :Invitation envoyée\r\n";
+	send(client_fd, confirmMsg.c_str(), confirmMsg.size(), 0);
 
-	// Optionnel : Ajouter l'utilisateur à une liste d'accès pour le mode `i`
+	std::cout << "Utilisateur " << user << " invité à rejoindre le canal " << channelName << " par " << client_fd << std::endl;
 }
 
 void Server::partChannel(int client_fd, const std::string& channelName) {
@@ -382,7 +407,6 @@ void Server::partChannel(int client_fd, const std::string& channelName) {
 }
 
 void Server::setChannelMode(int client_fd, const std::string& channelName, const std::string& mode, const std::string& parameter) {
-	// Vérifier que le canal existe
 	if (channelMap.find(channelName) == channelMap.end()) {
 		std::cerr << "Erreur : Le canal " << channelName << " n'existe pas." << std::endl;
 		return;
@@ -390,13 +414,11 @@ void Server::setChannelMode(int client_fd, const std::string& channelName, const
 
 	Channel &channel = channelMap[channelName];
 
-	// Vérifier si le client est un opérateur de ce canal
 	if (channel.operators.find(client_fd) == channel.operators.end()) {
 		std::cerr << "Erreur : Le client " << client_fd << " n'est pas opérateur du canal " << channelName << "." << std::endl;
 		return;
 	}
 
-	// Appliquer le mode
 	if (mode == "+i") {
 		channel.inviteOnly = true;
 		std::cout << "Le mode +i (invitation seulement) est activé pour le canal " << channelName << std::endl;
@@ -421,34 +443,41 @@ void Server::setChannelMode(int client_fd, const std::string& channelName, const
 	} else if (mode == "-l") {
 		channel.userLimit = -1;
 		std::cout << "Limite d'utilisateurs pour le canal " << channelName << " est supprimée." << std::endl;
-	} else if (mode == "+o" && !parameter.empty()) {
-		// Trouver le FD de l'utilisateur cible pour lui donner les droits d'opérateur
-		int target_fd = -1;
-		for (std::map<int, Client>::iterator it = clientMap.begin(); it != clientMap.end(); ++it) {
-			if (it->second.nickname == parameter) {
-				target_fd = it->first;
-				break;
-			}
-		}
-
-		if (target_fd != -1) {
-			channel.operators.insert(target_fd);
-			std::cout << "Utilisateur " << parameter << " est maintenant opérateur du canal " << channelName << std::endl;
-		}
-	} else if (mode == "-o" && !parameter.empty()) {
-		int target_fd = -1;
-		for (std::map<int, Client>::iterator it = clientMap.begin(); it != clientMap.end(); ++it) {
-			if (it->second.nickname == parameter) {
-				target_fd = it->first;
-				break;
-			}
-		}
-
-		if (target_fd != -1) {
-			channel.operators.erase(target_fd);
-			std::cout << "Utilisateur " << parameter << " n'est plus opérateur du canal " << channelName << std::endl;
-		}
 	} else {
 		std::cerr << "Mode inconnu ou paramètre manquant pour le mode " << mode << std::endl;
+	}
+}
+
+void Server::topicChannel(int client_fd, const std::string& channelName, const std::string& topic) {
+	// Vérification de l'existence du canal
+	if (channelMap.find(channelName) == channelMap.end()) {
+		std::cerr << "Erreur : Le canal " << channelName << " n'existe pas." << std::endl;
+		return;
+	}
+
+	Channel &channel = channelMap[channelName];
+
+	// Vérification des permissions si le mode +t est activé
+	if (channel.topicRestricted && channel.operators.find(client_fd) == channel.operators.end()) {
+		std::cerr << "Erreur : Seuls les opérateurs peuvent modifier le sujet dans le canal " << channelName << " lorsque le mode +t est activé." << std::endl;
+		return;
+	}
+
+	// Définir ou afficher le sujet du canal
+	if (topic.empty()) {
+		std::string topicMsg = "Sujet actuel pour le canal " + channelName + " : " + channel.topic + "\r\n";
+		send(client_fd, topicMsg.c_str(), topicMsg.size(), 0);
+	} else {
+		// Mettre à jour le sujet
+		channel.topic = topic;
+		std::string topicUpdateMsg = ":" + clientMap[client_fd].nickname + " TOPIC " + channelName + " :" + topic + "\r\n";
+		
+		// Notifier tous les membres du canal du nouveau sujet
+		for (std::set<int>::iterator it = channel.clients.begin(); it != channel.clients.end(); ++it) {
+			int member_fd = *it;
+			send(member_fd, topicUpdateMsg.c_str(), topicUpdateMsg.size(), 0);
+		}
+
+		std::cout << "Sujet du canal " << channelName << " mis à jour par le client " << client_fd << std::endl;
 	}
 }

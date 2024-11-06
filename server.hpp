@@ -31,6 +31,8 @@ struct Channel {
 	bool topicRestricted;    // Mode `t` : sujet restreint aux opérateurs
 	std::string password;    // Mode `k` : mot de passe du canal
 	int userLimit;           // Mode `l` : limite d’utilisateurs
+	std::string topic;  // Sujet du canal
+
 
 	Channel() : inviteOnly(false), topicRestricted(false), userLimit(-1) {}
 	Channel(const std::string& name) : name(name), inviteOnly(false), topicRestricted(false), userLimit(-1) {}
@@ -63,6 +65,7 @@ private:
 	void kickUser(int client_fd, const std::string& channelName, const std::string& user);
 	void inviteUser(int client_fd, const std::string& channelName, const std::string& user);
 	void setChannelMode(int client_fd, const std::string& channelName, const std::string& mode, const std::string& parameter = "");
+	void topicChannel(int client_fd, const std::string& channelName, const std::string& topic);
 
 public:
 	Server(int port, const std::string &password);
