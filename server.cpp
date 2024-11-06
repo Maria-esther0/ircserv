@@ -6,35 +6,37 @@
 #include <fcntl.h>
 #include <set>
 #include <sstream>
+#include <ctime>
 
-Server::Server(int port, const std::string &password) : port(port), serverPassword(password) {
-	// Crée le socket du serveur
+Server::Server(int port, const std::string &password, const std::string &name)
+	: port(port), serverPassword(password), serverName(name) {
+	
 	server_fd = socket(AF_INET, SOCK_STREAM, 0);
-	if (server_fd == 0) {
-		std::cerr << "Erreur: Création du socket échouée - " << strerror(errno) << std::endl;
+	if (server_fd == -1) {
+		std::cerr << "Erreur: impossible de créer le socket" << std::endl;
 		exit(EXIT_FAILURE);
 	}
 
-	// Configurer le socket serveur en mode non-bloquant
-	setNonBlocking(server_fd);
-
-	// Configuration de l'adresse du serveur
+	// Initialisation de l'adresse
 	address.sin_family = AF_INET;
 	address.sin_addr.s_addr = INADDR_ANY;
 	address.sin_port = htons(port);
 
-	// Associe le socket à l'adresse et au port
 	if (bind(server_fd, (struct sockaddr*)&address, sizeof(address)) < 0) {
-		std::cerr << "Erreur: Bind échoué sur le port " << port << " - " << strerror(errno) << std::endl;
-		close(server_fd);
+		std::cerr << "Erreur: impossible de binder le socket" << std::endl;
 		exit(EXIT_FAILURE);
 	}
 
-	// Le serveur écoute les connexions entrantes
-	if (listen(server_fd, 5) < 0) {
-		std::cerr << "Erreur: Listen échoué - " << strerror(errno) << std::endl;
-		close(server_fd);
+	if (listen(server_fd, 10) < 0) {
+		std::cerr << "Erreur: écoute impossible sur le socket" << std::endl;
 		exit(EXIT_FAILURE);
+	}
+}
+
+Server::~Server() {
+	close(server_fd);
+	for (size_t i = 0; i < clients.size(); ++i) {
+		close(clients[i]);
 	}
 }
 
@@ -50,16 +52,61 @@ bool Server::checkPassword(int client_fd, const std::string &password) {
 	}
 }
 
-Server::~Server() {
-	close(server_fd);
-	for (size_t i = 0; i < clients.size(); ++i) {
-		close(clients[i]);
-	}
-}
+#include <ctime>
+#include <iostream>
 
 void Server::start() {
 	std::cout << "Le serveur est en écoute sur le port " << port << std::endl;
-	acceptClients();
+	
+	time_t lastPingTime = time(NULL);
+
+	while (true) {
+		// 1. Utiliser select() pour surveiller les activités des sockets
+		fd_set readfds;
+		FD_ZERO(&readfds);
+		FD_SET(server_fd, &readfds);
+		int max_fd = server_fd;
+
+		// Ajouter tous les clients existants au set de descripteurs
+		for (std::map<int, Client>::iterator it = clientMap.begin(); it != clientMap.end(); ++it) {
+			FD_SET(it->first, &readfds);
+			if (it->first > max_fd) {
+				max_fd = it->first;
+			}
+		}
+
+		struct timeval timeout;
+		timeout.tv_sec = 1; // Intervalle court pour vérifier régulièrement
+		timeout.tv_usec = 0;
+
+		int activity = select(max_fd + 1, &readfds, NULL, NULL, &timeout);
+		if (activity < 0 && errno != EINTR) {
+			std::cerr << "Erreur de select()" << std::endl;
+			exit(EXIT_FAILURE);
+		}
+
+		// 2. Traiter les nouvelles connexions et messages des clients existants
+		if (FD_ISSET(server_fd, &readfds)) {
+			acceptClients();
+		}
+
+		for (std::map<int, Client>::iterator it = clientMap.begin(); it != clientMap.end(); ++it) {
+			int client_fd = it->first;
+			if (FD_ISSET(client_fd, &readfds)) {
+				handleClient(client_fd);
+			}
+		}
+
+		// 3. Appeler sendPingToClients toutes les 60 secondes
+		time_t currentTime = time(NULL);
+		if (currentTime - lastPingTime >= 60) {
+			sendPingToClients();
+			lastPingTime = currentTime;
+		}
+
+		// 4. Appeler disconnectInactiveClients pour déconnecter les clients inactifs
+		disconnectInactiveClients();
+	}
 }
 
 void Server::acceptClients() {
@@ -124,25 +171,59 @@ void Server::setNonBlocking(int fd) {
 	int flags = fcntl(fd, F_GETFL, 0);
 	fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
+
+bool isValidUTF8(const std::string &str) {
+	int bytesToProcess = 0;
+	for (std::string::size_type i = 0; i < str.size(); ++i) {
+		unsigned char c = static_cast<unsigned char>(str[i]);
+		
+		if (bytesToProcess == 0) {
+			if ((c & 0x80) == 0) continue;                 // 0xxxxxxx (ASCII)
+			else if ((c & 0xE0) == 0xC0) bytesToProcess = 1; // 110xxxxx
+			else if ((c & 0xF0) == 0xE0) bytesToProcess = 2; // 1110xxxx
+			else if ((c & 0xF8) == 0xF0) bytesToProcess = 3; // 11110xxx
+			else return false;  // Caractère non valide pour UTF-8
+		} else {
+			if ((c & 0xC0) != 0x80) return false; // Les octets suivants doivent être 10xxxxxx
+			--bytesToProcess;
+		}
+	}
+	return bytesToProcess == 0; // Vérifie que la chaîne s'est terminée correctement
+}
+
 /*Implementation IRC*/
 
+// Fonction principale de traitement des commandes
 void Server::processCommand(int client_fd, const std::string &message) {
+	// Vérifier l'encodage UTF-8
+	if (!isValidUTF8(message)) {
+		std::string errorMsg = ":server 400 " + clientMap[client_fd].nickname + " :Invalid UTF-8 encoding\r\n";
+		send(client_fd, errorMsg.c_str(), errorMsg.size(), 0);
+		return;
+	}
+
 	std::istringstream iss(message);
 	std::string command;
 	iss >> command;
 
-	// Trouver le client correspondant au client_fd
-	Client& client = clientMap[client_fd];
+	Client &client = clientMap[client_fd];
 
-	// Log de debug pour chaque commande reçue
-	std::cerr << "Commande reçue : " << command << " de client_fd : " << client_fd << std::endl;
-
+	// Commande CAP pour la négociation des capacités
 	if (command == "CAP") {
-		std::string subCommand;
-		iss >> subCommand;
-		if (subCommand == "LS") {
-			std::string response = ":server CAP * LS :\r\n";
-			send(client_fd, response.c_str(), response.size(), 0);
+		std::string subcommand;
+		iss >> subcommand;
+
+		if (subcommand == "LS") {
+			std::string capResponse = ":server CAP * LS :\r\n"; // Liste vide des capacités
+			send(client_fd, capResponse.c_str(), capResponse.size(), 0);
+		} else if (subcommand == "REQ") {
+			std::string capRequested;
+			iss >> capRequested;
+			std::string capAckResponse = ":server CAP * NAK :" + capRequested + "\r\n";
+			send(client_fd, capAckResponse.c_str(), capAckResponse.size(), 0);
+		} else if (subcommand == "END") {
+			std::string capEndResponse = ":server CAP * END\r\n";
+			send(client_fd, capEndResponse.c_str(), capEndResponse.size(), 0);
 		}
 		return;
 	}
@@ -151,12 +232,11 @@ void Server::processCommand(int client_fd, const std::string &message) {
 		std::string password;
 		iss >> password;
 		if (!checkPassword(client_fd, password)) {
-			return; // Fermer la connexion si le mot de passe est incorrect
+			return;
 		}
-		client.passReceived = true; // Indiquer que le mot de passe a été reçu
+		client.passReceived = true;
 	} else if (command == "NICK") {
-		if (!client.passReceived) {
-			std::cerr << "Erreur : Le mot de passe doit être envoyé avant NICK.\n";
+		if (!client.passReceived && !serverPassword.empty()) {
 			return;
 		}
 		std::string nickname;
@@ -164,64 +244,60 @@ void Server::processCommand(int client_fd, const std::string &message) {
 		setNickname(client_fd, nickname);
 	} else if (command == "USER") {
 		if (!client.passReceived) {
-			std::cerr << "Erreur : Le mot de passe doit être envoyé avant USER.\n";
 			return;
 		}
 		std::string username, realname;
 		iss >> username;
 		std::getline(iss, realname);
 		setUser(client_fd, username, realname);
-
-		// Envoyer une séquence complète de messages de bienvenue après l'enregistrement de l'utilisateur
-		std::string welcomeMsg1 = ":server 001 " + client.nickname + " :Bienvenue sur le serveur IRC\r\n";
-		std::string welcomeMsg2 = ":server 002 " + client.nickname + " :Votre host est server, version 1.0\r\n";
-		std::string welcomeMsg3 = ":server 003 " + client.nickname + " :This server was created today\r\n";
-		std::string welcomeMsg4 = ":server 004 " + client.nickname + " server 1.0 iowghraAsORTVSxNCWqBzvd\r\n";
-		
-		send(client_fd, welcomeMsg1.c_str(), welcomeMsg1.size(), 0);
-		send(client_fd, welcomeMsg2.c_str(), welcomeMsg2.size(), 0);
-		send(client_fd, welcomeMsg3.c_str(), welcomeMsg3.size(), 0);
-		send(client_fd, welcomeMsg4.c_str(), welcomeMsg4.size(), 0);
-	} else if (command == "JOIN") {
-		std::string channel;
-		iss >> channel;
-		joinChannel(client_fd, channel);
-	} else if (command == "PART") {
-		std::string channel;
-		iss >> channel;
-		partChannel(client_fd, channel);
-	} else if (command == "KICK") {
-		std::string channel, user;
-		iss >> channel >> user;
-		kickUser(client_fd, channel, user);
-	} else if (command == "INVITE") {
-		std::string channel, user;
-		iss >> channel >> user;
-		inviteUser(client_fd, channel, user);
-	} else if (command == "MODE") {
-		std::string channel, mode, parameter;
-		iss >> channel >> mode;
-		if (iss >> parameter) {
-			setChannelMode(client_fd, channel, mode, parameter);
-		} else {
-			setChannelMode(client_fd, channel, mode);
-		}
-	} else if (command == "TOPIC") {
-		std::string channel, topic;
-		iss >> channel;
-		std::getline(iss, topic);
-		topic = topic.empty() ? "" : topic.substr(1); // Supprime l'espace initial de `getline`
-		topicChannel(client_fd, channel, topic);
-	} else if (command == "PRIVMSG") {
-		std::string recipient, messageBody;
-		iss >> recipient;
-		std::getline(iss, messageBody);
-		sendMessage(client_fd, recipient, messageBody);
-	} else if (command == "QUIT") {
-		close(client_fd);
-		removeClient(client_fd);
+		sendWelcomeMessages(client);
+	} else if (command == "PING") {
+		std::string pongMessage = "PONG :" + command.substr(5) + "\r\n"; // Réponse au PING
+		send(client_fd, pongMessage.c_str(), pongMessage.size(), 0);
 	} else {
-		std::cerr << "Commande inconnue reçue de " << client_fd << ": " << message << std::endl;
+		if (!client.registered) {
+			return;
+		}
+
+		if (command == "JOIN") {
+			std::string channel;
+			iss >> channel;
+			joinChannel(client_fd, channel);
+		} else if (command == "PART") {
+			std::string channel;
+			iss >> channel;
+			partChannel(client_fd, channel);
+		} else if (command == "KICK") {
+			std::string channel, user;
+			iss >> channel >> user;
+			kickUser(client_fd, channel, user);
+		} else if (command == "MODE") {
+			std::string channel, mode, parameter;
+			iss >> channel >> mode;
+			if (iss >> parameter) {
+				setChannelMode(client_fd, channel, mode, parameter);
+			} else {
+				setChannelMode(client_fd, channel, mode);
+			}
+		} else if (command == "TOPIC") {
+			std::string channel, topic;
+			iss >> channel;
+			std::getline(iss, topic);
+			topicChannel(client_fd, channel, topic);
+		} else if (command == "PRIVMSG") {
+			std::string recipient, messageBody;
+			iss >> recipient;
+			std::getline(iss, messageBody);
+			sendMessage(client_fd, recipient, messageBody);
+		} else if (command == "QUIT") {
+			close(client_fd);
+			removeClient(client_fd);
+		} else {
+			// Commande inconnue
+			std::string errorMsg = ":server 421 " + client.nickname + " " + command + " :Unknown command\r\n";
+			send(client_fd, errorMsg.c_str(), errorMsg.size(), 0);
+			std::cerr << "Commande inconnue reçue de " << client_fd << ": " << command << std::endl;
+		}
 	}
 }
 
@@ -277,12 +353,32 @@ void Server::joinChannel(int client_fd, const std::string& channelName) {
 	// Si le canal n'existe pas, le créer
 	if (channelMap.find(channelName) == channelMap.end()) {
 		channelMap[channelName] = Channel(channelName);
-		channelMap[channelName].operators.insert(client_fd); // Le créateur est opérateur
+		channelMap[channelName].operators.insert(client_fd); // Le premier utilisateur est opérateur
+	}
+
+	Channel& channel = channelMap[channelName];
+	
+	// Vérifier les conditions du canal (mode `+i`, limite d’utilisateurs, etc.)
+	if (channel.inviteOnly && channel.operators.find(client_fd) == channel.operators.end()) {
+		send(client_fd, ":server 473 :Cannot join channel (+i)\r\n", 39, 0); // Erreur d'accès au canal sur invitation seulement
+		return;
+	}
+
+	if (channel.userLimit > 0 && channel.clients.size() >= static_cast<size_t>(channel.userLimit)) {
+		send(client_fd, ":server 471 :Cannot join channel (+l)\r\n", 39, 0); // Erreur si le canal a atteint sa limite d'utilisateurs
+		return;
 	}
 
 	// Ajouter le client au canal
-	channelMap[channelName].clients.insert(client_fd);
+	channel.clients.insert(client_fd);
 	std::cout << "Client " << client_fd << " a rejoint le canal : " << channelName << std::endl;
+
+	// Message de confirmation JOIN pour les autres membres du canal
+	std::string joinMsg = ":" + clientMap[client_fd].nickname + " JOIN :" + channelName + "\r\n";
+	for (std::set<int>::iterator it = channel.clients.begin(); it != channel.clients.end(); ++it) {
+	int member_fd = *it;
+	send(member_fd, joinMsg.c_str(), joinMsg.size(), 0);
+}
 }
 
 void Server::sendMessage(int client_fd, const std::string& recipient, const std::string& message) {
@@ -387,22 +483,30 @@ void Server::inviteUser(int client_fd, const std::string& channelName, const std
 
 void Server::partChannel(int client_fd, const std::string& channelName) {
 	if (channelMap.find(channelName) == channelMap.end()) {
-		std::cerr << "Erreur: Le canal " << channelName << " n'existe pas." << std::endl;
+		std::cerr << "Erreur : Le canal " << channelName << " n'existe pas." << std::endl;
 		return;
 	}
 
-	Channel &channel = channelMap[channelName];
-	if (channel.clients.find(client_fd) != channel.clients.end()) {
-		channel.clients.erase(client_fd);
-		std::cout << "Client " << client_fd << " a quitté le canal : " << channelName << std::endl;
+	Channel& channel = channelMap[channelName];
+	if (channel.clients.find(client_fd) == channel.clients.end()) {
+		std::cerr << "Erreur : Le client n'est pas dans le canal " << channelName << std::endl;
+		return;
+	}
 
-		// Si le canal est vide, le supprimer
-		if (channel.clients.empty()) {
-			channelMap.erase(channelName);
-			std::cout << "Canal " << channelName << " supprimé car il est vide." << std::endl;
-		}
-	} else {
-		std::cerr << "Erreur: Le client " << client_fd << " n'est pas dans le canal " << channelName << std::endl;
+	// Envoyer le message PART à tous les membres du canal
+	std::string partMsg = ":" + clientMap[client_fd].nickname + " PART :" + channelName + "\r\n";
+	for (std::set<int>::iterator it = channel.clients.begin(); it != channel.clients.end(); ++it) {
+	int member_fd = *it;
+	send(member_fd, partMsg.c_str(), partMsg.size(), 0);
+}
+
+	// Retirer le client du canal
+	channel.clients.erase(client_fd);
+	std::cout << "Client " << client_fd << " a quitté le canal : " << channelName << std::endl;
+
+	// Supprimer le canal si vide
+	if (channel.clients.empty()) {
+		channelMap.erase(channelName);
 	}
 }
 
@@ -479,5 +583,63 @@ void Server::topicChannel(int client_fd, const std::string& channelName, const s
 		}
 
 		std::cout << "Sujet du canal " << channelName << " mis à jour par le client " << client_fd << std::endl;
+	}
+}
+
+std::string Server::getServerCreationDate() {
+	// Supposons que vous ayez stocké la date de démarrage du serveur
+	time_t now = time(0);
+	char buffer[80];
+	struct tm * timeinfo = localtime(&now);
+	strftime(buffer, 80, "%c", timeinfo);
+	return std::string(buffer);
+}
+
+void Server::sendWelcomeMessages(Client &client) {
+	std::string nick = client.nickname;
+	std::string user = client.username;
+	std::string host = "localhost"; // Remplacez par le nom de votre serveur ou l'IP
+
+	// Message 001 RPL_WELCOME
+	std::string msg001 = ":" + serverName + " 001 " + nick + " :Welcome to the IRC Network " + nick + "!" + user + "@" + host + "\r\n";
+	
+	// Message 002 RPL_YOURHOST
+	std::string msg002 = ":" + serverName + " 002 " + nick + " :Your host is " + serverName + ", running version 1.0\r\n";
+	
+	// Message 003 RPL_CREATED
+	std::string creationDate = getServerCreationDate(); // Implémentez cette fonction pour retourner la date de création
+	std::string msg003 = ":" + serverName + " 003 " + nick + " :This server was created " + creationDate + "\r\n";
+	
+	// Message 004 RPL_MYINFO
+	std::string userModes = "i"; // Modes utilisateur supportés (exemple)
+	std::string channelModes = "iowghraAsORTVSxNCWqBzvd"; // Modes de canal supportés (exemple)
+	std::string msg004 = ":" + serverName + " 004 " + nick + " " + serverName + " 1.0 " + userModes + " " + channelModes + "\r\n";
+
+	// Envoyer les messages au client
+	send(client.fd, msg001.c_str(), msg001.size(), 0);
+	send(client.fd, msg002.c_str(), msg002.size(), 0);
+	send(client.fd, msg003.c_str(), msg003.size(), 0);
+	send(client.fd, msg004.c_str(), msg004.size(), 0);
+}
+
+void Server::sendPingToClients() {
+	std::string pingMessage = "PING :server\r\n";
+	for (std::map<int, Client>::iterator it = clientMap.begin(); it != clientMap.end(); ++it) {
+		int client_fd = it->first;
+		send(client_fd, pingMessage.c_str(), pingMessage.size(), 0);
+	}
+}
+
+void Server::disconnectInactiveClients() {
+	time_t currentTime = time(NULL);
+	for (std::map<int, Client>::iterator it = clientMap.begin(); it != clientMap.end(); ) {
+		if (currentTime - it->second.lastPing > 120) { // 120 secondes de délai
+			int client_fd = it->first;
+			close(client_fd);
+			it = clientMap.erase(it);
+			std::cout << "Client " << client_fd << " déconnecté pour inactivité." << std::endl;
+		} else {
+			++it;
+		}
 	}
 }
