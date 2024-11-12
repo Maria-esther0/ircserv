@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include "server.hpp"
 
+// Gestionnaire de signal pour une fermeture propre du serveur
 void signalHandler(int signal) {
 	std::cout << "Signal reçu : " << signal << ". Fermeture du serveur..." << std::endl;
 	exit(EXIT_SUCCESS);
