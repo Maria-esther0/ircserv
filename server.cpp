@@ -1,5 +1,4 @@
 #include "server.hpp"
-#include "messages.hpp"
 #include <iostream>
 #include <cstring>
 #include <arpa/inet.h>
@@ -333,11 +332,12 @@ void Server::processCommand(int client_fd, const std::string &message) {
 void Server::handleClient(int client_fd) {
 	char buffer[1024] = {0};
 	int valread = read(client_fd, buffer, 1024);
+	std::
 	std::cout << "[DEBUG] ################## fun ##################" << std::endl;
 
 	if (valread > 0) {
 		std::cout << "[DEBUG] Reeceived message: " << buffer << std::endl;
-		// send(client_fd, "Bienvenue sur le serveur IRC!\n", strlen("Bienvenue sur le serveur IRC! :D\n"), 0);
+		// send(client_fd, "Bienvenue sur le serveur IRC!\n", strlen("Bienvenue sur le serveur IRC!\n"), 0);
 
 		std::string message(buffer);
 		std::stringstream ss(message);
