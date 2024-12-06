@@ -1,106 +1,88 @@
 #ifndef SERVER_HPP
 #define SERVER_HPP
 
-#include <string>
-#include <vector>
-#include <map>
-#include <set>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <unistd.h>
-#include <iostream>
-#include <stdlib.h>
-#include <stdio.h>
-#include <signal.h>
-
-//colors
-#define RED "\033[0;31m"
-#define WHITE "\033[0;37m"
-#define GREEN "\033[0;32m"
-#define YELLOW "\033[0;33m"
 #include <arpa/inet.h>
+#include <cctype>
+#include <csignal>
+#include <cstdlib>
+#include <fcntl.h>
+#include <iostream>
+#include <poll.h>
+#include <string>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <vector>
+#include <cstring>
+#include <unistd.h>
+#include <algorithm>
+#include <string>
+#include <set>
+#include "client.hpp"
+#include "channel.hpp"
 
-// Définir les structures Client et Channel
-struct Client {
-	int fd;
-	bool is_authenticated;
-	std::string nickname;
-	time_t lastPing;
-	std::string username;
-	std::string realname;
-	bool registered;    // Indique si le client est entièrement authentifié
-	bool passReceived;  // Pour vérifier si le mot de passe a été reçu
-	bool nickReceived;  // Pour vérifier si le pseudo (NICK) a été reçu
-	bool userReceived;  // Pour vérifier si le nom d'utilisateur (USER) a été reçu
+/* colors */
+#define RED "\033[0;31m"
+#define WHI "\033[0;37m"
+#define GRE "\033[0;32m"
+#define YEL "\033[0;33m"
 
-	Client() : fd(-42), is_authenticated(false), registered(false), passReceived(false), nickReceived(false), userReceived(false){}
-	Client(int fd) : fd(fd), is_authenticated(false), registered(false), passReceived(false), nickReceived(false), userReceived(false) {}
-};
-
-struct Channel {
-	std::string name;
-	std::set<int> clients;
-	std::set<int> operators;
-	bool inviteOnly;         // Mode `i` : invitation seulement
-	bool topicRestricted;    // Mode `t` : sujet restreint aux opérateurs
-	std::string password;    // Mode `k` : mot de passe du canal
-	int userLimit;           // Mode `l` : limite d’utilisateurs
-	std::string topic;       // Sujet du canal
-
-	Channel() : inviteOnly(false), topicRestricted(false), userLimit(-1) {}
-	Channel(const std::string& name) : name(name), inviteOnly(false), topicRestricted(false), userLimit(-1) {}
-};
+class Client;
+class Channel;
 
 class Server {
 private:
-	int server_fd; // Descripteur de fichier pour le serveur
-	int port; // Port sur lequel le serveur écoute
-	struct sockaddr_in address; // Adresse du serveur
-	std::vector<int> clients; // Liste des descripteurs de fichiers clients
-	void catch_signal();
-	static bool _signal;
+	int _port;
+	int _serverSocketFd;
+	std::string _password;
+	std::vector<Client> _clients;
+	std::vector<Channel> _channels;
+	std::vector<struct pollfd> _fds;
+	std::vector<int> _globalOpFds;
 
-	std::string serverPassword; // Mot de passe du serveur
-	std::map<int, Client> clientMap; // Associe les FDs aux instances Client
-	std::map<std::string, Channel> channelMap; // Associe les noms de canaux aux instances Channel
-	std::string serverName;
+	/* Stop server when we get a ctrl+c or ctrl+\ */
+	static bool _gotSig;
 
-	void setNonBlocking(int fd);
-	void removeClient(int client_fd);
-	bool checkPassword(int client_fd, const std::string& password);
-	void processCommand(int client_fd, const std::string& message);
-	void setNickname(int client_fd, const std::string& nickname);
-	void setUser(int client_fd, const std::string& username, const std::string& realname);
-	void joinChannel(int client_fd, const std::string& channel);
-	void partChannel(int client_fd, const std::string& channelName);
-	void sendMessage(int client_fd, const std::string& recipient, const std::string& message);
-	void kickUser(int client_fd, const std::string& channelName, const std::string& user);
-	void inviteUser(int client_fd, const std::string& channelName, const std::string& user);
-	void setChannelMode(int client_fd, const std::string& channelName, const std::string& mode, const std::string& parameter = "");
-	void topicChannel(int client_fd, const std::string& channelName, const std::string& topic);
-	void sendWelcomeMessages(Client &client, int client_fd);
-	std::string getServerCreationDate();
-	void sendPingToClients();
-	void disconnectInactiveClients();
-	bool CAP_LS;
+	void setupSignalHandlers();
 
 public:
-	Server(int port, const std::string &password, const std::string &name = "myircserver");
-	~Server();
-	void start(); // Méthode pour démarrer le serveur
-	void acceptClients(); // Accepter les connexions clients
-	void handleClient(int client_fd); // Gérer la communication avec un client
-	// void handleConnection(int clientSocket);
-	static void check_signal(int signal);
-	static int get_port(char *ag); // Récupérer le port à partir des arguments
-	bool                        getCapStatus();
-    void                        setCapStatus(bool value);
+	Server();
 
-	// commandes specifiques aux operateurs de canaux
-// 	void kick(int client_fd, const std::string& command); // expulser un utilisateur d'un canal
-// 	void invite(int client_fd, const std::string& command); // inviter un utilisateur dans un canal
-// 	void topic(int client_fd, const std::string& command); // changer le sujet d'un canal
-// 	void mode(int client_fd, const std::string& command); // changer le mode d'un canal
+	void startServer(char *portArg, char *pwdArg);
+	void initializeServerSocket();
+	void acceptNewClient();
+	void closeAllSockets();
+	void disconnectClient(int fd);
+	void handleClientData(int fd);
+
+	static int validateAndParsePort(const char *arg);
+	static void handleSignal(int signum);
+
+	bool isPasswordValid(const std::string &pwd) const;
+
+	bool doesNickExist(const std::string &nick);
+	Client& findClientByNick(const std::string& nick);
+	bool fdExists(int fd);
+	Client &getClientByFd(int fd);
+
+	bool channelExists(const std::string &name);
+	Channel &getChannelByName(const std::string &name);
+	std::vector<Channel> &getChannels();
+
+	Channel &createChannel(const std::string &name);
+	void removeChannel(const std::string &name);
+
+	void sendToClient(const std::string &rep, int fd);
+	void sendToAll(const std::string &rep);
+
+	void op(int fd);
+	bool fdIsGlobalOp(int fd);
+
+	void debugPrintFds();
+	void debugPrintChannels();
+
+	std::string hostname;
 };
 
-#endif // SERVER_HPP
+
+#endif //FT_IRC_SERVER_H

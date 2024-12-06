@@ -1,9 +1,9 @@
 NAME = ircserv
 
-SRCS = main.cpp server.cpp
+SRCS = main.cpp server.cpp client.cpp util.cpp channel.cpp
 OBJS = $(SRCS:.cpp=.o)
 CXX = g++
-CXXFLAGS = -Wall -Wextra -Werror -std=c++98
+CXXFLAGS = -std=c++98 -Wall -Werror -Wextra -pedantic -g3 -Wno-unused-parameter -Wno-unused-private-field # -fsanitize=address
 
 all: $(NAME)
 
