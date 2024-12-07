@@ -142,6 +142,7 @@ void Server::closeAllSockets() {
 			std::cerr << "Failed to close server socket: " << strerror(errno) << std::endl;
 		}
 	}
+	_serverSocketFd = -1; ///////////////////////////
 }
 
 void Server::initializeServerSocket() {
@@ -223,7 +224,13 @@ void Server::handleClientData(int fd) {
 	// Check if client disconnected
 	if (bytes <= 0) {
 		std::cout << "Client <" << fd << "> Disconnected" << std::endl;
-		disconnectClient(fd);
+		try {
+			disconnectClient(fd);
+		} catch (std::runtime_error &e) {
+			std::cerr << "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@Error: " << e.what() << std::endl;
+		}
+		// disconnectClient(fd);
+		
 	} else {
 		buff[bytes] = '\0';
 		std::cout << "Client <" << fd << "> Data:\n" << "`" << buff << "`" << std::endl;

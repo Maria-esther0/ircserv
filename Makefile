@@ -2,7 +2,7 @@
 CXX = c++
 
 # Compiler flags
-CXXFLAGS = -std=c++98 -Wall -Werror -Wextra -pedantic -g3 -Wno-unused-parameter -Wno-unused-private-field #-fsanitize=address
+CXXFLAGS = -std=c++98 -Wall -Werror -Wextra -pedantic -g3 -Wno-unused-parameter -Wno-unused-private-field -fsanitize=address
 
 # Name of the executable
 NAME = ircserv

@@ -529,27 +529,27 @@ void Client::part_command(std::string &command, std::vector<std::string> &args, 
 void Client::quit_command(std::string &command, std::vector<std::string> &args, Server &server)  {
 	(void) command;
 	(void) args;
-	std::vector<Channel> &channels = server.getChannels();
-	std::vector<std::string> chanNamesWithFd;
-	for (size_t i = 0; i < channels.size(); ++i) {
-		if (channels[i].isClientInChannel(_fd)) {
-			chanNamesWithFd.push_back(channels[i].getName());
-		}
-	}
-	std::string msg = get_messages(command);
-	for (size_t i = 0; i < chanNamesWithFd.size(); ++i) {
-		if (!server.channelExists(chanNamesWithFd[i])) {
-			continue;
-		}
-		Channel &chan = server.getChannelByName(chanNamesWithFd[i]);
-		chan.broadcastMessage(RPL_QUIT(_nick, _user, _hostname, channels[i].getName(), msg), server);
-		chan.removeAllAssociations(_fd);
-		if (chan.getClientFds().empty()) {
-			server.removeChannel(chan.getName());
-		}
-	}
-	sendReply(ERROR(msg));
-	server.disconnectClient(_fd);
+	// std::vector<Channel> &channels = server.getChannels();
+	// std::vector<std::string> chanNamesWithFd;
+	// for (size_t i = 0; i < channels.size(); ++i) {
+	// 	if (channels[i].isClientInChannel(_fd)) {
+	// 		chanNamesWithFd.push_back(channels[i].getName());
+	// 	}
+	// }
+	// std::string msg = get_messages(command);
+	// for (size_t i = 0; i < chanNamesWithFd.size(); ++i) {
+	// 	if (!server.channelExists(chanNamesWithFd[i])) {
+	// 		continue;
+	// 	}
+	// 	Channel &chan = server.getChannelByName(chanNamesWithFd[i]);
+	// 	chan.broadcastMessage(RPL_QUIT(_nick, _user, _hostname, channels[i].getName(), msg), server);
+	// 	chan.removeAllAssociations(_fd);
+	// 	if (chan.getClientFds().empty()) {
+	// 		server.removeChannel(chan.getName());
+	// 	}
+	// }
+	// sendReply(ERROR(msg));
+	// server.disconnectClient(_fd);
 }
 
 void Client::msg_command(std::string &command, std::vector<std::string> &args, Server &server)  {

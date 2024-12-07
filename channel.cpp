@@ -235,6 +235,7 @@ void Channel::removeOperator(int fd) {
 }
 
 void Channel::disconnectClient(int fd) {
+	std::cout << "Retrait du client " << fd << " du canal " << std::endl;
 	for (std::vector<int>::iterator it = _clientFds.begin(); it != _clientFds.end(); ++it) {
 		if (*it == fd) {
 			_clientFds.erase(it);
