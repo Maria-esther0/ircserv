@@ -36,7 +36,7 @@ private:
 
 public:
 	typedef void (Client::*MemberFunctionPtr)(std::string &command, std::vector<std::string> &args, Server &server);
-	static std::map<std::string, MemberFunctionPtr> createHandlerMap();
+	static std::map<std::string, MemberFunctionPtr> handle_map();
 	static std::map<std::string, MemberFunctionPtr> functionMap;
 	bool handleCommand(std::string &command, std::vector<std::string> &args, Server &server);
 
@@ -52,24 +52,24 @@ public:
 	void setFd(int fd);
 	void setIpAddr(const std::string &addr);
 	void processClientBuffer(const char *newBuff, Server &server);
-	
+
 	// commands
-	void handleCommandNick(std::string &command, std::vector<std::string> &args, Server &server);
-	void handleCommandPing(std::string &command, std::vector<std::string> &args, Server &server);
-	void handleCommandPass(std::string &command, std::vector<std::string> &args, Server &server);
-	void handleCommandCap(std::string &command, std::vector<std::string> &args, Server &server);
-	void handleCommandUser(std::string &command, std::vector<std::string> &args, Server &server);
-	void handleCommandJoin(std::string &command, std::vector<std::string> &args, Server &server);
-	void handleCommandMode(std::string &command, std::vector<std::string> &args, Server &server);
-	void handleCommandOper(std::string &command, std::vector<std::string> &args, Server &server);
-	void handleCommandWho(std::string &command, std::vector<std::string> &args, Server &server);
-	void handleCommandPrivmsg(std::string &command, std::vector<std::string> &args, Server &server);
-	void handleCommandTopic(std::string &command, std::vector<std::string> &args, Server &server);
-	void handleCommandKick(std::string &command, std::vector<std::string> &args, Server &server);
-	void handleCommandPart(std::string &command, std::vector<std::string> &args, Server &server);
-	void handleCommandQuit(std::string &command, std::vector<std::string> &args, Server &server);
-	void handleCommandMsg(std::string &command, std::vector<std::string> &args, Server &server);
-	void handleCommandInvite(std::string &command, std::vector<std::string> &args, Server &server);
+	void nick_command(std::string &command, std::vector<std::string> &args, Server &server);
+	void ping_command(std::string &command, std::vector<std::string> &args, Server &server);
+	void pass_command(std::string &command, std::vector<std::string> &args, Server &server);
+	void cap_command(std::string &command, std::vector<std::string> &args, Server &server);
+	void user_command(std::string &command, std::vector<std::string> &args, Server &server);
+	void join_command(std::string &command, std::vector<std::string> &args, Server &server);
+	void mode_command(std::string &command, std::vector<std::string> &args, Server &server);
+	void oper_command(std::string &command, std::vector<std::string> &args, Server &server);
+	void who_command(std::string &command, std::vector<std::string> &args, Server &server);
+	void privmsg_command(std::string &command, std::vector<std::string> &args, Server &server);
+	void topic_command(std::string &command, std::vector<std::string> &args, Server &server);
+	void kick_command(std::string &command, std::vector<std::string> &args, Server &server);
+	void part_command(std::string &command, std::vector<std::string> &args, Server &server);
+	void quit_command(std::string &command, std::vector<std::string> &args, Server &server);
+	void msg_command(std::string &command, std::vector<std::string> &args, Server &server);
+	void invite_command(std::string &command, std::vector<std::string> &args, Server &server);
 };
 
 #endif //FT_IRC_CLIENT_H

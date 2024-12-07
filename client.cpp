@@ -1,32 +1,54 @@
 #include "client.hpp"
+#include <unordered_map>
 
-Client::Client() {
-	_fd = -1;
-	_authenticated = false;
-	_buffer = "";
+Client::Client() : _fd(-1), _authenticated(false), _buffer("")
+{}
+
+std::map<std::string, Client::MemberFunctionPtr> Client::functionMap = Client::handle_map();
+
+std::map<std::string, Client::MemberFunctionPtr> Client::handle_map() {
+	std::map<std::string, MemberFunctionPtr> map;
+	map["NICK"] = &Client::nick_command;
+	map["PING"] = &Client::ping_command;
+	map["PASS"] = &Client::pass_command;
+	map["CAP"] = &Client::cap_command;
+	map["USER"] = &Client::user_command;
+	map["JOIN"] = &Client::join_command;
+	map["MODE"] = &Client::mode_command;
+	map["OPER"] = &Client::oper_command;
+	map["WHO"] = &Client::who_command;
+	map["PRIVMSG"] = &Client::privmsg_command;
+	map["TOPIC"] = &Client::topic_command;
+	map["KICK"] = &Client::kick_command;
+	map["PART"] = &Client::part_command;
+	map["QUIT"] = &Client::quit_command;
+	map["MSG"] = &Client::msg_command;
+	map["INVITE"] = &Client::invite_command;
+	return map;
 }
 
-std::map<std::string, Client::MemberFunctionPtr> Client::functionMap = Client::createHandlerMap();
+std::string Client::getNick() {
+	return _nick;
+}
 
-std::map<std::string, Client::MemberFunctionPtr> Client::createHandlerMap() {
-	std::map<std::string, MemberFunctionPtr> map;
-	map["NICK"] = &Client::handleCommandNick;
-	map["PING"] = &Client::handleCommandPing;
-	map["PASS"] = &Client::handleCommandPass;
-	map["CAP"] = &Client::handleCommandCap;
-	map["USER"] = &Client::handleCommandUser;
-	map["JOIN"] = &Client::handleCommandJoin;
-	map["MODE"] = &Client::handleCommandMode;
-	map["OPER"] = &Client::handleCommandOper;
-	map["WHO"] = &Client::handleCommandWho;
-	map["PRIVMSG"] = &Client::handleCommandPrivmsg;
-	map["TOPIC"] = &Client::handleCommandTopic;
-	map["KICK"] = &Client::handleCommandKick;
-	map["PART"] = &Client::handleCommandPart;
-	map["QUIT"] = &Client::handleCommandQuit;
-	map["MSG"] = &Client::handleCommandMsg;
-	map["INVITE"] = &Client::handleCommandInvite;
-	return map;
+std::string Client::getUser() {
+	return _user;
+}
+
+void Client::setRealName(const std::string &rname) {
+	_realname = rname;
+}
+
+std::string Client::getRealName() {
+	return _realname;
+}
+
+void Client::setHost(const std::string &host) {
+	_hostname = host;
+}
+
+std::string Client::getHost() {
+	return _hostname;
 }
 
 bool Client::handleCommand(std::string &command, std::vector<std::string> &args, Server &server) {
@@ -53,7 +75,7 @@ void Client::setIpAddr(const std::string& addr) {
 	_ipAddr = addr;
 }
 
-std::vector<std::string> extractCommands(std::string& commandBuffer) {
+std::vector<std::string> get_commands(std::string& commandBuffer) {
 	std::vector<std::string> commands;
 
 	size_t newlinePos = commandBuffer.find('\n');
@@ -77,7 +99,7 @@ bool startswith(const std::string& str, const std::string& needle) {
 	return true;
 }
 
-std::vector<std::string> getArgs(const std::string& command) {
+std::vector<std::string> arg_extraction(const std::string& command) {
 	std::string commandCopy = command;
 	size_t pos = 0;
 	while ((pos = commandCopy.find('\r', pos)) != std::string::npos) {
@@ -87,27 +109,23 @@ std::vector<std::string> getArgs(const std::string& command) {
 	std::vector<std::string> args;
 	std::istringstream iss(commandCopy);
 	std::string arg;
-
 	while (iss >> arg) {
 		args.push_back(util::trimSpace(std::string(arg.c_str())));
 	}
-
 	return args;
 }
 
 void Client::setNick(const std::string &nick) {
 	/* validate nick here */
-
 	_nick = nick;
 }
 
 void Client::setUser(const std::string &user) {
 	/* validate user here */
-
 	_user = user;
 }
 
-static void printArgs(const std::vector<std::string> &args) {
+static void print_args(const std::vector<std::string> &args) {
 	std::cout << "Args:\n";
 	for (size_t i = 0; i < args.size(); ++i) {
 		std::cout << (i + 1) << ": " << args[i];
@@ -119,23 +137,19 @@ static void printArgs(const std::vector<std::string> &args) {
 	}
 }
 
-static std::string extractMessage(const std::string& command) {
+static std::string get_messages(const std::string& command) {
 	size_t colon_pos = command.rfind(':');
-
 	if (colon_pos == std::string::npos) {
 		return ""; // No colon found, return empty string
 	}
-
 	std::string message = command.substr(colon_pos + 1);
-
 	if (!message.empty() && message[message.size() - 1] == '\r') {
 		message.erase(message.size() - 1);
 	}
-
 	return message;
 }
 
-static std::string channelNameFromArg(std::string arg) {
+static std::string get_channel_name(std::string arg) {
 	if (arg.empty()) {
 		return "";
 	}
@@ -146,7 +160,7 @@ static std::string channelNameFromArg(std::string arg) {
 	}
 }
 
-void Client::handleCommandNick(std::string &command, std::vector<std::string> &args, Server &server)  {
+void Client::nick_command(std::string &command, std::vector<std::string> &args, Server &server)  {
 	if (args.size() > 1) {
 		if (server.doesNickExist(args[1])) {
 			sendReply(ERR_NICKNAMEINUSE(_nick, args[1]));
@@ -165,7 +179,7 @@ void Client::handleCommandNick(std::string &command, std::vector<std::string> &a
 	}
 }
 
-void Client::handleCommandPass(std::string &command, std::vector<std::string> &args, Server &server)  {
+void Client::pass_command(std::string &command, std::vector<std::string> &args, Server &server)  {
 	(void) command;
 	(void) server;
 	if (args.size() > 1) {
@@ -175,14 +189,14 @@ void Client::handleCommandPass(std::string &command, std::vector<std::string> &a
 	}
 }
 
-void Client::handleCommandPing(std::string &command, std::vector<std::string> &args, Server &server)  {
+void Client::ping_command(std::string &command, std::vector<std::string> &args, Server &server)  {
 	(void) command;
 	(void) args;
 	(void) server;
 	sendReply(RPL_PING);
 }
 
-void Client::handleCommandCap(std::string &command, std::vector<std::string> &args, Server &server)  {
+void Client::cap_command(std::string &command, std::vector<std::string> &args, Server &server)  {
 	(void) command;
 	(void) server;
 	if (args[0] == "CAP" && args.size() > 2 && args[1] == "LS" && args[2] == "302") {
@@ -195,7 +209,7 @@ void Client::handleCommandCap(std::string &command, std::vector<std::string> &ar
 	}
 }
 
-void Client::handleCommandUser(std::string &command, std::vector<std::string> &args, Server &server)  {
+void Client::user_command(std::string &command, std::vector<std::string> &args, Server &server)  {
 	(void) command;
 	if (args.size() > 4) {
 		if (_authenticated) {
@@ -213,13 +227,13 @@ void Client::handleCommandUser(std::string &command, std::vector<std::string> &a
 	}
 }
 
-void Client::handleCommandJoin(std::string &command, std::vector<std::string> &args, Server &server)  {
+void Client::join_command(std::string &command, std::vector<std::string> &args, Server &server)  {
 	(void) command;
-	if (args.size() > 1 && channelNameFromArg(args[1]).size() > 0) {
-		if (!server.channelExists(channelNameFromArg(args[1]))) {
-			server.createChannel(channelNameFromArg(args[1]));
+	if (args.size() > 1 && get_channel_name(args[1]).size() > 0) {
+		if (!server.channelExists(get_channel_name(args[1]))) {
+			server.createChannel(get_channel_name(args[1]));
 		}
-		Channel &chan = server.getChannelByName(channelNameFromArg(args[1]));
+		Channel &chan = server.getChannelByName(get_channel_name(args[1]));
 		if (chan.isClientInChannel(_fd)) {
 			sendReply(ERR_USERONCHANNEL(_nick, chan.getName()));
 			return;
@@ -246,13 +260,13 @@ void Client::handleCommandJoin(std::string &command, std::vector<std::string> &a
 	}
 }
 
-void Client::handleCommandMode(std::string &command, std::vector<std::string> &args, Server &server)  {
+void Client::mode_command(std::string &command, std::vector<std::string> &args, Server &server)  {
 	(void) command;
 	(void) args;
 	(void) server;
 	if (args.size() > 1) {
 
-		std::string name = channelNameFromArg(args[1]);
+		std::string name = get_channel_name(args[1]);
 		if (server.channelExists(name)) {
 			Channel &chan = server.getChannelByName(name);
 			if (args.size() > 2) {
@@ -319,7 +333,7 @@ void Client::handleCommandMode(std::string &command, std::vector<std::string> &a
 	}
 }
 
-void Client::handleCommandOper(std::string &command, std::vector<std::string> &args, Server &server)  {
+void Client::oper_command(std::string &command, std::vector<std::string> &args, Server &server)  {
 	(void) command;
 	if (args.size() > 2) {
 		if (args[2] != "1234") {
@@ -334,14 +348,14 @@ void Client::handleCommandOper(std::string &command, std::vector<std::string> &a
 	}
 }
 
-void Client::handleCommandWho(std::string &command, std::vector<std::string> &args, Server &server)  {
+void Client::who_command(std::string &command, std::vector<std::string> &args, Server &server)  {
 	(void) command;
 	if (args.size() > 1) {
-		if (!server.channelExists(channelNameFromArg(args[1]))) {
+		if (!server.channelExists(get_channel_name(args[1]))) {
 			sendReply(ERR_NOSUCHCHANNEL(args[1]));
 			return;
 		}
-		Channel &chan = server.getChannelByName(channelNameFromArg(args[1]));
+		Channel &chan = server.getChannelByName(get_channel_name(args[1]));
 		std::cout << "Amount of users in channel for WHO: " << chan.getClientFds().size() << std::endl;
 		for (size_t i = 0; i < chan.getClientFds().size(); i ++) {
 			if (!server.fdExists(chan.getClientFds()[i])) {
@@ -360,15 +374,15 @@ void Client::handleCommandWho(std::string &command, std::vector<std::string> &ar
 	}
 }
 
-void Client::handleCommandPrivmsg(std::string &command, std::vector<std::string> &args, Server &server)  {
+void Client::privmsg_command(std::string &command, std::vector<std::string> &args, Server &server)  {
 	if (args.size() > 2) {
-		if (server.channelExists(channelNameFromArg(args[1]))) {
-			Channel &chan = server.getChannelByName(channelNameFromArg(args[1]));
+		if (server.channelExists(get_channel_name(args[1]))) {
+			Channel &chan = server.getChannelByName(get_channel_name(args[1]));
 			if (!chan.isClientInChannel(_fd)) {
 				sendReply(ERR_USERNOTINCHANNEL(_nick, chan.getName()));
 				return;
 			}
-			std::string message = extractMessage(command);
+			std::string message = get_messages(command);
 			for (size_t i = 0; i < chan.getClientFds().size(); i ++) {
 				if (!server.fdExists(chan.getClientFds()[i])) {
 					continue;
@@ -383,7 +397,7 @@ void Client::handleCommandPrivmsg(std::string &command, std::vector<std::string>
 				sendReply(ERR_NOSUCHNICK(_nick, args[1]));
 				return;
 			}
-			std::string message = extractMessage(command);
+			std::string message = get_messages(command);
 			Client &c = server.findClientByNick(args[1]);
 			c.sendReply(PRIV_MSG_DM(_nick, _user, _hostname, c.getNick(), message));
 		} else {
@@ -396,7 +410,7 @@ void Client::handleCommandPrivmsg(std::string &command, std::vector<std::string>
 	}
 }
 
-void Client::handleCommandTopic(std::string &command, std::vector<std::string> &args, Server &server)  {
+void Client::topic_command(std::string &command, std::vector<std::string> &args, Server &server)  {
 	(void) command;
 	(void) args;
 	(void) server;
@@ -405,12 +419,12 @@ void Client::handleCommandTopic(std::string &command, std::vector<std::string> &
 		return;
 	}
 
-	if (!server.channelExists(channelNameFromArg(args[1]))) {
+	if (!server.channelExists(get_channel_name(args[1]))) {
 		sendReply(ERR_NOSUCHCHANNEL(args[1]));
 		return;
 	}
 
-	Channel &chan = server.getChannelByName(channelNameFromArg(args[1]));
+	Channel &chan = server.getChannelByName(get_channel_name(args[1]));
 	if (args.size() > 2) {
 		if (!chan.isClientInChannel(_fd)) {
 			sendReply(ERR_USERNOTINCHANNEL(_nick, chan.getName()));
@@ -420,21 +434,21 @@ void Client::handleCommandTopic(std::string &command, std::vector<std::string> &
 			sendReply(ERR_CHANOPRIVSNEEDED(chan.getName(), _nick));
 			return;
 		}
-		std::string topic = extractMessage(command);
+		std::string topic = get_messages(command);
 		chan.setChannelTopic(topic, *this, server);
 	} else {
 		sendReply(RPL_TOPIC_COMMAND(_nick, chan.getName(), chan.getTopic()));
 	}
 }
 
-void Client::handleCommandKick(std::string &command, std::vector<std::string> &args, Server &server)  {
+void Client::kick_command(std::string &command, std::vector<std::string> &args, Server &server)  {
 	(void) command;
 	if (args.size() > 2) {
-		if (!server.channelExists(channelNameFromArg(args[1]))) {
+		if (!server.channelExists(get_channel_name(args[1]))) {
 			sendReply(ERR_NOSUCHCHANNEL(args[1]));
 			return;
 		}
-		Channel &chan = server.getChannelByName(channelNameFromArg(args[1]));
+		Channel &chan = server.getChannelByName(get_channel_name(args[1]));
 		if (!chan.isClientInChannel(_fd)) {
 			sendReply(ERR_USERNOTINCHANNEL(_nick, chan.getName()));
 			return;
@@ -464,17 +478,17 @@ void Client::handleCommandKick(std::string &command, std::vector<std::string> &a
 	}
 }
 
-void Client::handleCommandInvite(std::string &command, std::vector<std::string> &args, Server &server)  {
+void Client::invite_command(std::string &command, std::vector<std::string> &args, Server &server)  {
 	(void) command;
 	(void) args;
 	(void) server;
 	if (args.size() > 2) {
-		std::cout << "INVITE: checking if channel `" << channelNameFromArg(args[2]) << "` exists: " << server.channelExists(channelNameFromArg(args[2])) << std::endl;
-		if (!server.channelExists(channelNameFromArg(args[2]))) {
+		std::cout << "INVITE: checking if channel `" << get_channel_name(args[2]) << "` exists: " << server.channelExists(get_channel_name(args[2])) << std::endl;
+		if (!server.channelExists(get_channel_name(args[2]))) {
 			sendReply(ERR_NOSUCHCHANNEL(args[2]));
 			return;
 		}
-		Channel &chan = server.getChannelByName(channelNameFromArg(args[2]));
+		Channel &chan = server.getChannelByName(get_channel_name(args[2]));
 		if (!chan.isClientInChannel(_fd)) {
 			sendReply(ERR_USERNOTINCHANNEL(_nick, chan.getName()));
 			return;
@@ -493,9 +507,9 @@ void Client::handleCommandInvite(std::string &command, std::vector<std::string> 
 	}
 }
 
-void Client::handleCommandPart(std::string &command, std::vector<std::string> &args, Server &server) {
+void Client::part_command(std::string &command, std::vector<std::string> &args, Server &server) {
 	if (args.size() > 1) {
-		std::string channelName = channelNameFromArg(args[1]);
+		std::string channelName = get_channel_name(args[1]);
 		if (!server.channelExists(channelName)) {
 			sendReply(ERR_NOSUCHCHANNEL(args[1]));
 			return;
@@ -505,14 +519,14 @@ void Client::handleCommandPart(std::string &command, std::vector<std::string> &a
 			sendReply(ERR_USERNOTINCHANNEL(_nick, chan.getName()));
 			return;
 		}
-		chan.broadcastMessage(RPL_PART(_nick, _user, _hostname, chan.getName(), extractMessage(command)), server);
+		chan.broadcastMessage(RPL_PART(_nick, _user, _hostname, chan.getName(), get_messages(command)), server);
 		chan.part(_fd, server); // Utiliser la fonction part pour retirer le client du canal
 	} else {
 		sendReply(ERR_NEEDMOREPARAMS(std::string("PART")));
 	}
 }
 
-void Client::handleCommandQuit(std::string &command, std::vector<std::string> &args, Server &server)  {
+void Client::quit_command(std::string &command, std::vector<std::string> &args, Server &server)  {
 	(void) command;
 	(void) args;
 	std::vector<Channel> &channels = server.getChannels();
@@ -522,7 +536,7 @@ void Client::handleCommandQuit(std::string &command, std::vector<std::string> &a
 			chanNamesWithFd.push_back(channels[i].getName());
 		}
 	}
-	std::string msg = extractMessage(command);
+	std::string msg = get_messages(command);
 	for (size_t i = 0; i < chanNamesWithFd.size(); ++i) {
 		if (!server.channelExists(chanNamesWithFd[i])) {
 			continue;
@@ -538,13 +552,13 @@ void Client::handleCommandQuit(std::string &command, std::vector<std::string> &a
 	server.disconnectClient(_fd);
 }
 
-void Client::handleCommandMsg(std::string &command, std::vector<std::string> &args, Server &server)  {
+void Client::msg_command(std::string &command, std::vector<std::string> &args, Server &server)  {
 	if (args.size() > 2) {
 		if (!server.doesNickExist(args[1])) {
 			sendReply(ERR_NOSUCHNICK(_nick, args[1]));
 			return;
 		}
-		std::string message = extractMessage(command);
+		std::string message = get_messages(command);
 		Client &c = server.findClientByNick(args[1]);
 		c.sendReply(PRIV_MSG_DM(_nick, _user, _hostname, c.getNick(), message));
 	} else {
@@ -554,15 +568,15 @@ void Client::handleCommandMsg(std::string &command, std::vector<std::string> &ar
 
 void Client::processClientBuffer(const char *newBuff, Server &server) {
 	_buffer += std::string(newBuff);
-	std::vector<std::string> commands = extractCommands(_buffer);
+	std::vector<std::string> commands = get_commands(_buffer);
 	std::vector<std::string>::iterator it;
 
 	for (it = commands.begin(); it != commands.end(); ++it) {
-		std::vector<std::string> args = getArgs(*it);
+		std::vector<std::string> args = arg_extraction(*it);
 		if (args.empty()) {
 			continue;
 		}
-		printArgs(args);
+		print_args(args);
 
 		// Commandes de débogage
 		if (args[0] == "DEBUG:FDS") {
@@ -611,36 +625,32 @@ void Client::registerClient(Server &server) {
 }
 
 void Client::sendReply(const std::string &rep) const {
-	const size_t MAX_LENGTH = 510;
-	std::string truncatedRep = rep.substr(0, MAX_LENGTH);
-	std::cout << "Tentative de réponse avec " << truncatedRep << " à " << _fd << std::endl;
-	truncatedRep += "\r\n";
-	ssize_t sentBytes = send(_fd, truncatedRep.c_str(), truncatedRep.length(), 0);
-	if (sentBytes < 0) {
-		std::cerr << "Erreur lors de l'envoi de la réponse au client <" << _fd << ">" << std::endl;
-	}
+    const size_t MAX_LENGTH = 510;
+
+    // Truncate the message to the maximum length and append the carriage return/newline
+    std::string truncatedRep = rep.substr(0, MAX_LENGTH);  // Truncate to MAX_LENGTH
+    truncatedRep.append("\r\n");  // Append the CRLF sequence
+
+    std::cout << "Tentative de réponse avec " << truncatedRep << " à " << _fd << std::endl;
+
+    // Send the response to the client
+    ssize_t sentBytes = send(_fd, truncatedRep.c_str(), truncatedRep.length(), 0);
+
+    if (sentBytes < 0) {
+        // More detailed error handling
+        std::cerr << "Erreur lors de l'envoi de la réponse au client <" << _fd << "> : "
+                  << strerror(errno) << std::endl;
+    }
 }
 
-std::string Client::getNick() {
-	return _nick;
-}
 
-std::string Client::getUser() {
-	return _user;
-}
-
-void Client::setRealName(const std::string &rname) {
-	_realname = rname;
-}
-
-std::string Client::getRealName() {
-	return _realname;
-}
-
-void Client::setHost(const std::string &host) {
-	_hostname = host;
-}
-
-std::string Client::getHost() {
-	return _hostname;
-}
+//void Client::sendReply(const std::string &rep) const {
+//	const size_t MAX_LENGTH = 510;
+//	std::string truncatedRep = rep.substr(0, MAX_LENGTH);
+//	std::cout << "Tentative de réponse avec " << truncatedRep << " à " << _fd << std::endl;
+//	truncatedRep += "\r\n";
+//	ssize_t sentBytes = send(_fd, truncatedRep.c_str(), truncatedRep.length(), 0);
+//	if (sentBytes < 0) {
+//		std::cerr << "Erreur lors de l'envoi de la réponse au client <" << _fd << ">" << std::endl;
+//	}
+//}
