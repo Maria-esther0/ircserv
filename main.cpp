@@ -16,11 +16,20 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 
-	Server server;
+	try{
+		Server server;
 
-	// Initialisation du serveur
-	server.startServer(argv[1], argv[2]);
-	std::cout << "The Server Closed!" << std::endl;
-
+		// Initialisation du serveur
+		server.startServer(argv[1], argv[2]);
+		std::cout << "The Server Closed!" << std::endl;
+	} catch (std::exception &e) {
+		std::cerr << "Error: " << e.what() << std::endl;
+		return 1;
+	}
 	return 0;
 }
+
+
+// PASS 123
+// NICK user1
+// USER user1 0 * :first user

@@ -577,7 +577,6 @@ void Client::processClientBuffer(const char *newBuff, Server &server) {
 			continue;
 		}
 		print_args(args);
-
 		// Commandes de débogage
 		if (args[0] == "DEBUG:FDS") {
 			server.debugPrintFds();
@@ -587,14 +586,12 @@ void Client::processClientBuffer(const char *newBuff, Server &server) {
 			server.debugPrintChannels();
 			continue;
 		}
-
 		// Vérifier si le client est authentifié
 		if (!_authenticated && args[0] != "PASS" && args[0] != "USER" && args[0] != "NICK") {
 			std::cout << "Not registered, skipping command" << std::endl;
 			sendReply(ERR_NOTREGISTERED);
 			continue;
 		}
-
 		// Traiter la commande
 		if (!handleCommand(*it, args, server)) {
 			sendReply(ERR_UNKNOWNCOMMAND(args[0]));
